@@ -1,0 +1,17 @@
+{
+  "host": {
+    "title": "Host",
+    "type": "string",
+    "default": "http://nitroweb.ddns.net:25461/webplayer/"
+  },
+  "username": {
+    "title": "Username",
+    "type": "string",
+    "default": ""
+  },
+  "password": {
+    "title": "Password",
+    "type": "string",
+    "default": ""
+  }
+}
