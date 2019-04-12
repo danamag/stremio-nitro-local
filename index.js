@@ -14,7 +14,7 @@ const defaults = {
 	categories: [{"name":"NEWS","id":"16"},{"name":"NETWORKS","id":"5"},{"name":"ENTERTAINMENT","id":"18"},{"name":"MOVIES PREMIUM","id":"7"},{"name":"KIDS","id":"15"},{"name":"CANADA","id":"9"},{"name":"U.K.","id":"52"},{"name":"SPORTS (USA/CA)","id":"53"},{"name":"SPORTS LATINO AMERICA","id":"176"},{"name":"4K LIVE TV (45MB Min)","id":"214"},{"name":"UK SPORTS & INTL","id":"8"},{"name":"SKY SPORTS","id":"206"},{"name":"GERMAN/DUTCH","id":"234"},{"name":"MEXICO","id":"14"},{"name":"LATINO","id":"50"},{"name":"ARGENTINA","id":"196"},{"name":"SPAIN","id":"3"},{"name":"COLOMBIA","id":"168"},{"name":"HONDURAS","id":"197"},{"name":"NICARAGUA","id":"235"},{"name":"PERU","id":"199"},{"name":"CHILE","id":"198"},{"name":"DOMINICAN","id":"200"},{"name":"SALVADOR & COSTA RICA","id":"202"},{"name":"ECUADOR & BOLIVIA","id":"201"},{"name":"VENEZUELA & PARAGUAY","id":"204"},{"name":"PANAMA & URUGUAY","id":"203"},{"name":"CHRISTIAN","id":"174"},{"name":"MUSIC CHOICE","id":"169"},{"name":"PPV MOVIES","id":"166"},{"name":"PPV MOVIES ESPANOL","id":"181"},{"name":"MOVIES PLUS (DUAL AUDIO)","id":"184"},{"name":"24/7","id":"162"},{"name":"24/7 4K UHD","id":"217"},{"name":"24/7 CLASSIC TV","id":"85"},{"name":"24/7 British TV","id":"228"},{"name":"24/7 SAGAS","id":"216"},{"name":"24/7 SOUL TRAIN","id":"215"},{"name":"24/7 HORROR","id":"187"},{"name":"24/7 ANIME","id":"190"},{"name":"24/7 COOKING TV","id":"224"},{"name":"24/7 COMEDY","id":"159"},{"name":"24/7 MUSIC","id":"158"},{"name":"24/7 Music (ALTERNATIVE)","id":"227"},{"name":"24/7 MUSICA ESPANOL","id":"223"},{"name":"24/7 ESPANOL","id":"155"},{"name":"24/7 CARICATURAS","id":"194"},{"name":"24/7 KIDS","id":"163"},{"name":"24/7 NFL","id":"220"},{"name":"24/7 NBA","id":"219"},{"name":"24/7 MLB","id":"218"},{"name":"24/7 Futbol Soccer","id":"229"},{"name":"24/7 RACING","id":"230"},{"name":"24/7 UFC/MMA/BOXING","id":"222"},{"name":"24/7 BOXING","id":"231"},{"name":"24/7 SPORTS","id":"157"},{"name":"24/7 NHL","id":"221"},{"name":"24/7 FITNESS","id":"171"},{"name":"24/7 CHRISTMAS SPIRIT","id":"225"},{"name":"AUSTRALIA","id":"188"},{"name":"FRANCE & BELGIUM TEST","id":"211"},{"name":"CARIBBEAN","id":"182"},{"name":"ITALIA TEST","id":"205"},{"name":"PORTUGUESE","id":"20"},{"name":"PHILLIPINES TEST","id":"212"},{"name":"ARABIC TEST","id":"207"},{"name":"BRASIL","id":"61"},{"name":"AFRICAN TEST","id":"208"},{"name":"INDIA & PAKISTAN TEST (fixed)","id":"209"},{"name":"NOWSPORTS,EUROSPORT,ARENA & SKLUB","id":"233"},{"name":"FLOWSPORTS & ASTROSPORTS","id":"210"},{"name":"BEIN & ELEVEN SPORTS","id":"189"},{"name":"ESPN+ & COLLEGE EXTRA","id":"180"},{"name":"NFL SUNDAY TICKET","id":"105"},{"name":"NBA LEAGUE PASS","id":"110"},{"name":"NHL CENTER ICE","id":"111"},{"name":"MLB EXTRA INNINGS","id":"58"},{"name":"NCAAF & NCAAB PASS","id":"193"},{"name":"MLS SOCCER PASS","id":"195"},{"name":"3PM KICKOFFS / SOCCER","id":"109"},{"name":"RUGBY PASSES","id":"192"},{"name":"NBC GOLD","id":"108"},{"name":"PPV EVENTS (DAY OF ONLY)","id":"21"},{"name":"UFC FIGHT PASS","id":"183"},{"name":"HORSE RACING & MORE","id":"191"}]
 }
 
-
+let genres = []
 let categories = []
 let catalogs = []
 const channels = {}
@@ -47,15 +47,28 @@ setEndpoint(config.host || defaults.endpoint)
 
 function setCatalogs(cats) {
 	categories = cats
-	catalogs = []
-	cats.forEach(cat => {
-		catalogs.push({
-			id: defaults.prefix + 'cat_' + cat.id,
-			name: cat.name,
-			type: 'tv',
-			extra: [ { name: 'search' } ]
+	if (config.noFilters) {
+		catalogs = []
+		cats.forEach(cat => {
+			catalogs.push({
+				id: defaults.prefix + 'cat_' + cat.id,
+				name: cat.name,
+				type: 'tv',
+				extra: [ { name: 'search' } ]
+			})
 		})
-	})
+	} else {
+		genres = defaults.categories.map(el => { return el.name })
+		catalogs = [
+			{
+				id: defaults.prefix + '_cat',
+				name: defaults.name,
+				type: 'tv',
+				genres,
+				extra: [{ name: 'genre' }]
+			}
+		]
+	}
 	return true
 }
 
@@ -154,8 +167,24 @@ function findMeta(id) {
 	return meta
 }
 
-function getCatalog(reqId, cb) {
-	const id = reqId.replace(defaults.prefix + 'cat_', '')
+function getCatalog(args, cb) {
+	let id
+	if (config.noFilters) {
+		id = args.id.replace(defaults.prefix + 'cat_', '')
+	} else {
+		const genre = (args.extra || {}).genre
+		if (genre)
+			categories.some(el => {
+				if (el.name == genre) {
+					id = el.id
+					return true
+				}
+			})
+		if (!id) {
+			reject(defaults.name + ' - Could not get id for request')
+			return
+		}
+	}
 	if (channels[id] && channels[id].length)
 		cb(channels[id])
 	else {
@@ -241,7 +270,7 @@ async function retrieveRouter() {
 	builder.defineCatalogHandler(args => {
 		return new Promise((resolve, reject) => {
 			const extra = args.extra || {}
-			getCatalog(args.id, catalog => {
+			getCatalog(args, catalog => {
 				if (catalog) {
 					let results = catalog
 					if (extra.search)
