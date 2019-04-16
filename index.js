@@ -47,7 +47,7 @@ setEndpoint(config.host || defaults.endpoint)
 
 function setCatalogs(cats) {
 	categories = cats
-	if (config.noFilters) {
+	if (config.style == 'Catalogs') {
 		catalogs = []
 		cats.forEach(cat => {
 			catalogs.push({
@@ -57,7 +57,7 @@ function setCatalogs(cats) {
 				extra: [ { name: 'search' } ]
 			})
 		})
-	} else {
+	} else if (config.style == 'Filters') {
 		genres = defaults.categories.map(el => { return el.name })
 		catalogs = [
 			{
@@ -68,11 +68,38 @@ function setCatalogs(cats) {
 				extra: [{ name: 'genre' }]
 			}
 		]
+	} else if (config.style == 'Channels') {
+		catalogs = [
+			{
+				id: defaults.prefix + '_cat',
+				name: defaults.name,
+				type: 'tv',
+				extra: [{ name: 'search' }]
+			}
+		]
 	}
 	return true
 }
 
 setCatalogs(defaults.categories)
+
+function catToMeta(cat) {
+	return {
+		id: defaults.prefix + 'cat_' + cat.id,
+		name: cat.name,
+		logo: defaults.icon,
+		type: 'channel',
+		posterShape: 'square'
+	}
+}
+
+function catToVideo(cat) {
+	return {
+		id: cat.id,
+		title: cat.name,
+		thumbnail: cat.poster
+	}
+}
 
 let loggedIn = false
 
@@ -167,11 +194,11 @@ function findMeta(id) {
 	return meta
 }
 
-function getCatalog(args, cb) {
+function getCatalog(args, cb, force) {
 	let id
-	if (config.noFilters) {
+	if (config.style == 'Catalogs') {
 		id = args.id.replace(defaults.prefix + 'cat_', '')
-	} else {
+	} else if (config.style == 'Filters') {
 		const genre = (args.extra || {}).genre
 		if (genre)
 			categories.some(el => {
@@ -181,7 +208,15 @@ function getCatalog(args, cb) {
 				}
 			})
 		if (!id) {
-			reject(defaults.name + ' - Could not get id for request')
+			console.log(defaults.name + ' - Could not get id for request')
+			cb(false)
+			return
+		}
+	} else if (config.style == 'Channels') {
+		if (force) {
+			id = args.id.replace(defaults.prefix + 'cat_', '')
+		} else {
+			cb(categories.map(catToMeta))
 			return
 		}
 	}
@@ -248,7 +283,7 @@ function retrieveManifest() {
 			name: defaults.name,
 			description: 'IPTV Service - Requires Subscription',
 			resources: ['stream', 'meta', 'catalog'],
-			types: ['tv'],
+			types: ['tv', 'channel'],
 			idPrefixes: [defaults.prefix],
 			icon: defaults.icon,
 			catalogs
@@ -270,6 +305,9 @@ async function retrieveRouter() {
 	builder.defineCatalogHandler(args => {
 		return new Promise((resolve, reject) => {
 			const extra = args.extra || {}
+			if (config.style == 'Filters' && !extra.genre) {
+				return resolve({ metas: [] })
+			}
 			getCatalog(args, catalog => {
 				if (catalog) {
 					let results = catalog
@@ -287,21 +325,36 @@ async function retrieveRouter() {
 
 	builder.defineMetaHandler(args => {
 		return new Promise((resolve, reject) => {
-			const meta = findMeta(args.id)
-			if (!meta) reject(defaults.name + ' - Could not get meta')
-			else resolve({ meta })
+			if (config.style == 'Channels') {
+				let meta
+				categories.some(cat => {
+					if (cat.id == args.id.replace(defaults.prefix + 'cat_', '')) {
+						meta = catToMeta(cat)
+						return true
+					}
+				})
+				if (!meta) {
+					reject(defaults.name + ' - Could not get meta')
+					return
+				}
+				getCatalog(args, catalog => {
+					if ((catalog || []).length)
+						meta.videos = catalog.map(catToVideo)
+					resolve({ meta })
+				}, true)
+			} else {
+				const meta = findMeta(args.id)
+				if (!meta) reject(defaults.name + ' - Could not get meta')
+				else resolve({ meta })
+			}
 		})
 	})
 
 	builder.defineStreamHandler(args => {
 		return new Promise((resolve, reject) => {
-			const meta = findMeta(args.id)
-			if (!meta) reject(defaults.name + ' - Could not get meta for stream')
-			else {
-				const chanId = args.id.split('_')[2]
-				const url = 'http://' + persist.getItem('loginData').url + ':' + persist.getItem('loginData').port + '/live/' + config.username + '/' + config.password + '/' + chanId + '.m3u8'
-				resolve({ streams: [ { title: 'Stream', url } ] })
-			}
+			const chanId = args.id.split('_')[2]
+			const url = 'http://' + persist.getItem('loginData').url + ':' + persist.getItem('loginData').port + '/live/' + config.username + '/' + config.password + '/' + chanId + '.m3u8'
+			resolve({ streams: [ { title: 'Stream', url } ] })
 		})
 	})
 
